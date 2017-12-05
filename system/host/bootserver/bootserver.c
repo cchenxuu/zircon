@@ -18,6 +18,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <mdns/mdns.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -51,6 +52,7 @@ int64_t us_between_packets = DEFAULT_US_BETWEEN_PACKETS;
 bool use_filename_prefix = true;
 bool use_net186_workaround = false;
 
+static bool use_mdns = false;
 static bool use_tftp = true;
 static bool use_color = true;
 static size_t total_file_size;
@@ -223,6 +225,9 @@ int send_boot_command(struct sockaddr_in6* ra) {
     return -1;
 }
 
+int boot_with_netboot();
+int boot_with_mdns();
+
 int main(int argc, char** argv) {
     struct in6_addr allowed_addr;
     struct sockaddr_in6 addr;
@@ -347,6 +352,9 @@ int main(int argc, char** argv) {
             argv++;
         } else if (!strcmp(argv[1], "--netboot")) {
             use_tftp = false;
+            use_mdns = false;
+        } else if (!strcmp(argv[1], "--mdns")) {
+            use_mdns = true;
         } else if (!strcmp(argv[1], "--tftp")) {
             use_tftp = true;
         } else if (!strcmp(argv[1], "--nocolor")) {
@@ -400,6 +408,10 @@ int main(int argc, char** argv) {
                 memcpy(auto_ramdisk_fn + prefix_len, bootdata_fn, strlen(bootdata_fn) + 1);
             }
         }
+    }
+
+    if (use_mdns) {
+        return boot_with_mdns();
     }
 
     memset(&addr, 0, sizeof(addr));
@@ -541,5 +553,72 @@ int main(int argc, char** argv) {
         drain(s);
     }
 
+    return 0;
+}
+
+int boot_with_mdns() {
+    const char* address = MDNS_IPV6;
+    int port = MDNS_PORT;
+
+    int sockfd = mdns_socket(AF_INET6, address, port);
+    if (sockfd < 0) {
+        perror("mdns_socket");
+        exit(1);
+    }
+
+    printf("Listening at %s:%d (fd=%d)\n", address, port, sockfd);
+
+    struct sockaddr_storage fromaddr;
+    socklen_t fromaddr_len;
+    char buf[512];
+    int byte_count;
+
+    while (true) {
+        fromaddr_len = sizeof fromaddr;
+        byte_count = recvfrom(sockfd, buf, sizeof buf, 0,
+                              (struct sockaddr*)&fromaddr, &fromaddr_len);
+        if (byte_count < 1) {
+            continue;
+        }
+
+        mdns_query query;
+        memset(&query, 0, sizeof query);
+
+        buf[byte_count] = '\0';
+        int res = mdns_parse_query(buf, byte_count, &query);
+        if (res < 0) {
+            printf("mdns_parse_query error");
+            exit(1);
+        }
+
+        // Read the sender's address info.
+        char ip[256];
+        if (fromaddr.ss_family == AF_INET6) {
+            struct sockaddr_in6* sin = (struct sockaddr_in6*)&fromaddr;
+            inet_ntop(AF_INET6, &(sin->sin6_addr), ip, INET6_ADDRSTRLEN);
+        } else {
+            struct sockaddr_in* sin = (struct sockaddr_in*)&fromaddr;
+            inet_ntop(AF_INET, &(sin->sin_addr), ip, INET_ADDRSTRLEN);
+        }
+
+        printf("Got %d bytes from (%s)(%s)\n", (int)byte_count, ip, 
+               query.domain);
+
+        // Dump the DNS header
+        mdns_header header = query.header;
+        printf("- Header:\n");
+        printf("--- ID:     %d\n", header.id);
+        printf("--- Flags:  %d\n", header.flags);
+        printf("--- Que ct: %d\n", header.question_count);
+        printf("--- Ans ct: %d\n", header.answer_count);
+        printf("--- Aut ct: %d\n", header.authority_count);
+        printf("--- RR ct:  %d\n", header.rr_count);
+
+        // if (header.question_count < 1) {
+        //     continue;
+        // }
+    }
+
+    close(sockfd);
     return 0;
 }

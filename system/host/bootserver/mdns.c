@@ -2,28 +2,38 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <arpa/inet.h>
-#include <errno.h>
-#include <netdb.h>
-#include <netinet/in.h>
+// #include <arpa/inet.h>
+// #include <errno.h>
+#include <netdb.h> // For addrinfo
+// #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
+// #include <sys/socket.h>
+// #include <sys/types.h>
+// #include <unistd.h>
 
 #include <mdns/mdns.h>
 
-namespace mdns {
+// const char* IPV4_ADDR = "224.0.0.251";
+// const char* IPV6 = "ff02::fb";
+// const int PORT = 5353;
 
-const char* IPV4_ADDR = "224.0.0.251";
-const char* IPV6 = "ff02::fb";
-const int PORT = 5353;
+// uint16_t __halfword(char* buf);
 
-uint16_t __halfword(char* buf);
+// The IPv4 address where mDNS multicast queries must be sent.
+const char* MDNS_IPV4 = "224.0.0.251";
+// The IPv6 address where mDNS multicast queries must be sent.
+const char* MDNS_IPV6 = "ff02::fb";
+// The default port where mDNS multicast queries must be sent.
+const int MDNS_PORT = 5353;
 
-int create_socket(int ai_family, const char* address, int port) {
+// Reads a big-endian halfword from buf.
+uint16_t __halfword(char* buf) {
+    return buf[1] | buf[0] << 8;
+}
+
+int mdns_socket(int ai_family, const char* address, int port) {
     struct addrinfo info;
     memset(&info, 0, sizeof info);
 
@@ -68,49 +78,47 @@ int create_socket(int ai_family, const char* address, int port) {
 
     freeaddrinfo(addr);
     return sockfd;
+    return 1;
 }
 
-int parse_query(char* buf, ssize_t buflen, query* query) {
+int mdns_parse_query(char* buf, ssize_t buflen, mdns_query* query) {
     char* ptr = buf;
-    int res = parse_header(ptr, buflen, &(query->header));
-    if (res < 0)
+    int res = 0;
+    if ((res = mdns_parse_header(ptr, buflen, &(query->header)) < 0)) {
         return res;
+    }
 
-    // buflen -= HEADER_BYTE_COUNT;
+    ptr += HEADER_BYTE_COUNT;
+    buflen -= HEADER_BYTE_COUNT;
+    if ((res = mdns_parse_domain(ptr, &(query->domain)) < 0)) {
+        return res;
+    }
     // ptr += HEADER_BYTE_COUNT;
     // res = dns::parse_message(ptr, buflen, $(query->name));
+    // char domain[MAX_DOMAIN_LENGTH];
+    // memset(domain, 0, MAX_DOMAIN_LENGTH);
+    // mdns::parse_domain(&buf[HEADER_BYTE_COUNT], domain);
     return 0;
 }
 
-int parse_header(char* buf, ssize_t buflen, header* header) {
+int mdns_parse_header(char* buf, ssize_t buflen, mdns_header* header) {
     if (buflen < HEADER_BYTE_COUNT) {
         return -1;
     }
 
     char* ptr = buf;
 
-    header->id = __halfword(ptr);
-    ptr += 2;
-
-    header->flags = __halfword(ptr);
-    ptr += 2;
-
-    header->question_count = __halfword(ptr);
-    ptr += 2;
-
-    header->answer_count = __halfword(ptr);
-    ptr += 2;
-
-    header->authority_count = __halfword(ptr);
-    ptr += 2;
-
-    header->rr_count = __halfword(ptr);
-    ptr += 2;
+    header->id = __halfword(ptr); ptr += 2;
+    header->flags = __halfword(ptr); ptr += 2;
+    header->question_count = __halfword(ptr); ptr += 2;
+    header->answer_count = __halfword(ptr); ptr += 2;
+    header->authority_count = __halfword(ptr); ptr += 2;
+    header->rr_count = __halfword(ptr); ptr += 2;
 
     return 0;
 }
 
-int parse_domain(char* buf, char* dest) {
+int mdns_parse_domain(char* buf, char* dest) {
     char domain[MAX_DOMAIN_LENGTH];
     char* dptr = dest;
     int i = 0;
@@ -136,10 +144,3 @@ int parse_domain(char* buf, char* dest) {
     *dptr = '\0'; // Replace last '.' with null terminator.
     return 0;
 }
-
-// Reads a big-endian halfword from buf.
-uint16_t __halfword(char* buf) {
-    return buf[1] | buf[0] << 8;
-}
-
-} // namespace mdns

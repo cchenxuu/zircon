@@ -9,6 +9,12 @@ void update_status(size_t bytes_so_far);
 int tftp_xfer(struct sockaddr_in6* addr, const char* fn, const char* name);
 int netboot_xfer(struct sockaddr_in6* addr, const char* fn, const char* name);
 
+// mdns config.
+// int mdns_socket(int ai_family, const char* addr, int port);
+// extern const char* MDNS_IPV6;
+// extern const char* MDNS_IPV6;
+// extern const int MDNS_PORT;
+
 #define DEFAULT_TFTP_BLOCK_SZ 1024
 #define DEFAULT_TFTP_WIN_SZ 1024
 #define DEFAULT_US_BETWEEN_PACKETS 20

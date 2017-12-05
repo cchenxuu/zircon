@@ -10,7 +10,7 @@ config("mdns_config") {
 source_set("mdns") {
     #Don't forget to update rules.mk as well for the Zircon build.
     sources = [
-        "mdns.cpp",
+        "mdns.c",
         "include/mdns/mdns.h",
     ] public_configs = [":mdns_config"]
 }
