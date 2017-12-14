@@ -179,3 +179,37 @@ int mdns_parse_rr(char* buf, mdns_rr* record) {
     record->rdlength = buf[1] | buf[0] << 8;
     return 0;
 }
+
+
+// Functions for creating an DNS message
+
+void init_message(mdns_header *h, uint16_t id, 
+    uint16_t flags) {
+    h->id = id;
+    h->flags = flags;
+    h->question_count = 0;
+    h->answer_count = 0;
+    h->authority_count = 0;
+    h->rr_count = 0;
+}
+
+// Writes a domain name to dest as a set of length-prefixed labels.
+// Ignores compression.
+void domain_to_labels(char* domain, uint8_t* dest) {
+    uint8_t* destPtr = dest;
+    uint8_t labelSize;
+    
+    const char dot[1] = ".";
+    const char* label = strtok(domain, dot);
+    int i;
+    while (label != NULL) {
+        labelSize = strlen(label);
+        *destPtr++ = labelSize;
+        for (i=0; i < labelSize; i++) {
+            *destPtr++ = *label++;
+        }
+        label = strtok(NULL, dot);
+    }
+    *destPtr = '\0';
+    return 0;
+}

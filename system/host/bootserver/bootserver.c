@@ -556,7 +556,17 @@ int main(int argc, char** argv) {
     return 0;
 }
 
-void __dump_rr(mdns_rr* rrs, int len, char* indent);
+
+void __dump_rr(mdns_rr* rrs, int len, char* indent) {
+    mdns_rr* rr = rrs;
+    int count = 0;
+    for (; rr != NULL && count < len; count++, rr++) {
+        printf("%sType:  %04X\n", indent, rr->type);
+        printf("%sClass: %04X\n", indent, rr->class);
+        printf("%sTTL:   %d\n",   indent, rr->ttl);
+    }
+}
+
 int boot_with_mdns() {
     const char* address = MDNS_IPV6;
     int port = MDNS_PORT;
@@ -573,6 +583,11 @@ int boot_with_mdns() {
     socklen_t fromaddr_len;
     char buf[512];
     int byte_count;
+
+    mdns_query msg;
+    uint8_t dest[MAX_DOMAIN_LENGTH];
+    char domain[18] = "_bootserver.local"; 
+    domain_to_labels(domain, dest);
 
     while (true) {
         fromaddr_len = sizeof fromaddr;
@@ -640,61 +655,8 @@ int boot_with_mdns() {
 
         
         memset(buf, 0, sizeof(buf));
-
-        // Create response
-        mdns_header rheader;
-        memset(&header, 0, sizeof(header));
-        rheader.id = 42;
-        rheader.flags = 0x8000; // 0b100000000000000 (response)
-        rheader.answer_count = 1;
-
-        mdns_rr ranswer;
-        memset(&ranswer, 0, sizeof(ranswer));
-        sprintf(ranswer.name, "11_bootserver5local"); // 17; 10, 5
-        ranswer.type = 1; // A 
-        ranswer.class = 0x00ff; // Any
-        
-        mdns_query message;
-        memset(&message, 0, sizeof(message));
-        message.header = rheader;
-        memcpy(message.answers, &ranswer, sizeof(ranswer));
-        char* buf = (void*)&message;
- 
-        struct iovec iov[1];
-        iov[0].iov_base=buf;
-        iov[0].iov_len=sizeof(message);
-        
-        struct msghdr msg;
-        msg.msg_name="_bootserver.local";
-        msg.msg_namelen=17;
-        msg.msg_iov=iov;
-        msg.msg_iovlen=1;
-        msg.msg_control=0;
-        msg.msg_controllen=0;
-
-        if (sendmsg(sockfd, &msg, 0) < 0) {
-            perror("sendto");
-        }
-        
-            // int count = 0;
-            // for (; qcount < header.question_count; qcount++) {        
-            //     mdns_rr answer = query.answers[qcount];
-            //     printf("    Type:  %04x\n", answer.type);
-            //     printf("    Class: %04x\n", answer.class);
-            //     printf("    TTL:   %d\n", answer.ttl);
-            // }
     }
 
     close(sockfd);
     return 0;
-}
-
-void __dump_rr(mdns_rr* rrs, int len, char* indent) {
-    mdns_rr* rr = rrs;
-    int count = 0;
-    for (; rr != NULL && count < len; count++, rr++) {
-        printf("%sType:  %04X\n", indent, rr->type);
-        printf("%sClass: %04X\n", indent, rr->class);
-        printf("%sTTL:   %d\n",   indent, rr->ttl);
-    }
 }

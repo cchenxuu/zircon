@@ -13,7 +13,7 @@ extern const int MDNS_PORT;
 extern const int MDNS_ANNOUCE_PORT;
 // The maxinum number of characters in a domain name.
 #define MAX_DOMAIN_LENGTH 253
-
+#define MAX_DOMAIN_LABEL 63
 // The number of bytes in a DNS message header.
 #define HEADER_BYTE_COUNT 12
 
