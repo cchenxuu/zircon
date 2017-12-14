@@ -10,7 +10,7 @@ extern const char* MDNS_IPV4;
 extern const char* MDNS_IPV6;
 // The default port where mDNS multicast queries must be sent.
 extern const int MDNS_PORT;
-
+extern const int MDNS_ANNOUCE_PORT;
 // The maxinum number of characters in a domain name.
 #define MAX_DOMAIN_LENGTH 253
 
@@ -68,20 +68,35 @@ typedef struct mdns_header_t {
     uint16_t rr_count;
 } mdns_header;
 
-// // An mDNS answer packet
-// typedef struct {
-//     header header;
-//     char domain[MAX_DOMAIN_LENGTH];
-//     uint8_t ip[16];
-//     bool is_unicast;
-// } answer;
+// An mDNS question.
+// FIXME: Change to type and class.
+typedef struct mdns_question_t {
+    char* domain;
+    uint16_t qtype;
+    uint16_t qclass;
+} mdns_question;
 
-// // An mDNS query packet
+// An mDNS resource record
+typedef struct mdns_rr_t {
+    char name[MAX_DOMAIN_LENGTH];
+    uint16_t type;
+    uint16_t class;
+    uint16_t ttl;
+    uint16_t rdlength;
+    uint16_t rdata;
+} mdns_rr;
+
+// An mDNS query packet
+// FIXME: Rename to mdns_question
+// FIXME: Handle more than 10 things or use linked list.
 typedef struct mdns_query_t {
     mdns_header header;
-    char domain[MAX_DOMAIN_LENGTH];
-    uint16_t rrtype;
+    mdns_question questions[10];
+    mdns_rr answers[10];
+    mdns_rr authorities[10];
+    mdns_rr rrs[10];
 } mdns_query;
+
 
 // Creates a socket from the given address family, address and port.
 //
@@ -94,7 +109,16 @@ int mdns_socket(int ai_family, const char* addr, int port);
 // Parses a mDNS query from buf into the give query struct.
 //
 // Returns a value < 0 if an error occurred.
+// FIXME: Rename to parse_message.
 int mdns_parse_query(char* buf, ssize_t buflen, mdns_query* query);
+
+// FIXME: Rename mdns_query to mdns_message
+int mdns_pack_msg(mdns_query* query);
+
+// FIXME: HIDE ALL PARSING METHODS BELOW HERE.
+
+// Parses an mDNS message question.
+int mdns_parse_question(char* buf, mdns_question* dest);
 
 // Parses a mDNS message header from buf into the given header struct.
 //
@@ -104,4 +128,7 @@ int mdns_parse_header(char* buf, ssize_t buflen, mdns_header* header);
 // Parses a domain name from buf into the given buffer.
 //
 // Returns a value < 0 if an error occurred.
-int mdns_parse_domain(char* buf, char* dest);
+int mdns_parse_domain(char* buf, char** dest);
+
+// Parses a resource record.
+int mdns_parse_rr(char *buf, mdns_rr *rr);

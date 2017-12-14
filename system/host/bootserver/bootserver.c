@@ -556,6 +556,7 @@ int main(int argc, char** argv) {
     return 0;
 }
 
+void __dump_rr(mdns_rr* rrs, int len, char* indent);
 int boot_with_mdns() {
     const char* address = MDNS_IPV6;
     int port = MDNS_PORT;
@@ -580,11 +581,10 @@ int boot_with_mdns() {
         if (byte_count < 1) {
             continue;
         }
+        buf[byte_count] = '\0';
 
         mdns_query query;
         memset(&query, 0, sizeof query);
-
-        buf[byte_count] = '\0';
         int res = mdns_parse_query(buf, byte_count, &query);
         if (res < 0) {
             printf("mdns_parse_query error");
@@ -601,24 +601,100 @@ int boot_with_mdns() {
             inet_ntop(AF_INET, &(sin->sin_addr), ip, INET_ADDRSTRLEN);
         }
 
-        printf("Got %d bytes from (%s)(%s)\n", (int)byte_count, ip, 
-               query.domain);
+        printf("Got %d bytes from (%s)\n", (int)byte_count, ip);
+            //    query.domain);
 
         // Dump the DNS header
         mdns_header header = query.header;
-        printf("- Header:\n");
-        printf("--- ID:     %d\n", header.id);
-        printf("--- Flags:  %d\n", header.flags);
-        printf("--- Que ct: %d\n", header.question_count);
-        printf("--- Ans ct: %d\n", header.answer_count);
-        printf("--- Aut ct: %d\n", header.authority_count);
-        printf("--- RR ct:  %d\n", header.rr_count);
+        printf("> Header:\n");
+        printf("  id:              %d\n", header.id);
+        printf("  flags:           %d\n", header.flags);
+        printf("  question count:  %d\n", header.question_count);
+        printf("  answer count:    %d\n", header.answer_count);
+        printf("  authority count: %d\n", header.authority_count);
+        printf("  resource record count: %d\n", header.rr_count);
 
-        // if (header.question_count < 1) {
-        //     continue;
-        // }
+        if (header.question_count > 0) {
+            printf("  > Questions:\n");
+            int qcount = 0;
+            for (; qcount < header.question_count; qcount++) {   
+                mdns_question question = query.questions[qcount];
+                printf("    Domain: %s\n", question.domain);
+                printf("    Type:   0x%02X\n", question.qtype);
+                printf("    Class:  0x%02X\n", question.qclass);
+            }
+        }
+
+        if (header.answer_count > 0) {
+            printf("  > Answers:\n");
+            __dump_rr(query.answers, header.question_count, "    ");
+        }
+        if (header.authority_count > 0) {
+            printf("  > Authorities:\n");
+            __dump_rr(query.authorities, header.authority_count, "    ");
+        }
+        if (header.rr_count > 0) {
+            printf("  > Extra rrs:\n");
+            __dump_rr(query.rrs, header.rr_count, "    ");
+        }
+
+        
+        memset(buf, 0, sizeof(buf));
+
+        // Create response
+        mdns_header rheader;
+        memset(&header, 0, sizeof(header));
+        rheader.id = 42;
+        rheader.flags = 0x8000; // 0b100000000000000 (response)
+        rheader.answer_count = 1;
+
+        mdns_rr ranswer;
+        memset(&ranswer, 0, sizeof(ranswer));
+        sprintf(ranswer.name, "11_bootserver5local"); // 17; 10, 5
+        ranswer.type = 1; // A 
+        ranswer.class = 0x00ff; // Any
+        
+        mdns_query message;
+        memset(&message, 0, sizeof(message));
+        message.header = rheader;
+        memcpy(message.answers, &ranswer, sizeof(ranswer));
+        char* buf = (void*)&message;
+ 
+        struct iovec iov[1];
+        iov[0].iov_base=buf;
+        iov[0].iov_len=sizeof(message);
+        
+        struct msghdr msg;
+        msg.msg_name="_bootserver.local";
+        msg.msg_namelen=17;
+        msg.msg_iov=iov;
+        msg.msg_iovlen=1;
+        msg.msg_control=0;
+        msg.msg_controllen=0;
+
+        if (sendmsg(sockfd, &msg, 0) < 0) {
+            perror("sendto");
+        }
+        
+            // int count = 0;
+            // for (; qcount < header.question_count; qcount++) {        
+            //     mdns_rr answer = query.answers[qcount];
+            //     printf("    Type:  %04x\n", answer.type);
+            //     printf("    Class: %04x\n", answer.class);
+            //     printf("    TTL:   %d\n", answer.ttl);
+            // }
     }
 
     close(sockfd);
     return 0;
+}
+
+void __dump_rr(mdns_rr* rrs, int len, char* indent) {
+    mdns_rr* rr = rrs;
+    int count = 0;
+    for (; rr != NULL && count < len; count++, rr++) {
+        printf("%sType:  %04X\n", indent, rr->type);
+        printf("%sClass: %04X\n", indent, rr->class);
+        printf("%sTTL:   %d\n",   indent, rr->ttl);
+    }
 }

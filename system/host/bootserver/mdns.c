@@ -15,18 +15,13 @@
 
 #include <mdns/mdns.h>
 
-// const char* IPV4_ADDR = "224.0.0.251";
-// const char* IPV6 = "ff02::fb";
-// const int PORT = 5353;
-
-// uint16_t __halfword(char* buf);
-
 // The IPv4 address where mDNS multicast queries must be sent.
 const char* MDNS_IPV4 = "224.0.0.251";
 // The IPv6 address where mDNS multicast queries must be sent.
 const char* MDNS_IPV6 = "ff02::fb";
 // The default port where mDNS multicast queries must be sent.
 const int MDNS_PORT = 5353;
+const int MDNS_ANNOUCE_PORT = 5350;
 
 // Reads a big-endian halfword from buf.
 uint16_t __halfword(char* buf) {
@@ -82,22 +77,34 @@ int mdns_socket(int ai_family, const char* address, int port) {
 }
 
 int mdns_parse_query(char* buf, ssize_t buflen, mdns_query* query) {
-    char* ptr = buf;
     int res = 0;
-    if ((res = mdns_parse_header(ptr, buflen, &(query->header)) < 0)) {
+    if ((res = mdns_parse_header(buf, buflen, &(query->header)) < 0)) {
         return res;
     }
 
-    ptr += HEADER_BYTE_COUNT;
-    buflen -= HEADER_BYTE_COUNT;
-    if ((res = mdns_parse_domain(ptr, &(query->domain)) < 0)) {
-        return res;
+    buf += HEADER_BYTE_COUNT;
+    int count = 0;
+    for (; count < query->header.question_count; count++) {
+        if ((res = mdns_parse_question(buf, &query->questions[count])) < 0) {
+            return res;
+        }
     }
-    // ptr += HEADER_BYTE_COUNT;
-    // res = dns::parse_message(ptr, buflen, $(query->name));
-    // char domain[MAX_DOMAIN_LENGTH];
-    // memset(domain, 0, MAX_DOMAIN_LENGTH);
-    // mdns::parse_domain(&buf[HEADER_BYTE_COUNT], domain);
+
+    for(count = 0; count < query->header.answer_count; count++) {
+        if ((res = mdns_parse_rr(buf, &query->answers[count])) < 0) {
+            return res;
+        }
+    }
+    for (count =0; count < query->header.authority_count; count++) {
+        if ((res = mdns_parse_rr(buf, &query->authorities[count])) < 0) {
+            return res;
+        }
+    }
+    for (count =0; count < query->header.rr_count; count++) {
+        if ((res = mdns_parse_rr(buf, &query->rrs[count])) < 0) {
+            return res;
+        }
+    }
     return 0;
 }
 
@@ -118,29 +125,57 @@ int mdns_parse_header(char* buf, ssize_t buflen, mdns_header* header) {
     return 0;
 }
 
-int mdns_parse_domain(char* buf, char* dest) {
-    char domain[MAX_DOMAIN_LENGTH];
-    char* dptr = dest;
+int mdns_parse_question(char* buf, mdns_question* dest) {
+    int res = 0;
+    if ((res = mdns_parse_domain(buf, &dest->domain)) < 0) {
+        return res;
+    }
+    buf += res;
+    dest->qtype = __halfword(buf); buf += 2;
+    dest->qclass = __halfword(buf); buf += 2;
+    return 0;
+}
+
+int mdns_parse_domain(char* dom, char** dest) {
+    char buf[MAX_DOMAIN_LENGTH];
+    int bufpos = 0;
     int i = 0;
     int size = 0;
 
-    while (i < MAX_DOMAIN_LENGTH && buf[i] != 0) {
-        size = (int)buf[i];
+    memset(buf, 0, MAX_DOMAIN_LENGTH);
+
+    while (i < MAX_DOMAIN_LENGTH && dom[i] != 0) {
+        size = (int)dom[i];
         i += 1;
         char field[size];
         memset(field, 0, size);
-        memcpy(field, &buf[i], size);
-        memcpy(dptr, field, size);
-        dptr += size;
-        *dptr = '.';
-        dptr += 1;
+        memcpy(field, &dom[i], size);
+        memcpy(buf + bufpos, field, size);
+        bufpos += size + 1;
+        buf[bufpos-1] = '.';
         i += (int)size;
     }
     if (i >= MAX_DOMAIN_LENGTH) {
         return -1; // Too long to be valid domain name.
     }
 
-    dptr -= 1;
-    *dptr = '\0'; // Replace last '.' with null terminator.
+    buf[bufpos-1]= '\0'; // Replace last '.' with null terminator.    
+    *dest = malloc(sizeof(char) * (bufpos-1));
+    memcpy(*dest, buf, bufpos-1);
+    return i+1;
+}
+
+// FIXME: Incomplete.
+int mdns_parse_rr(char* buf, mdns_rr* record) {
+    int res = 0;
+    if ((res = mdns_parse_domain(buf, &record->name) < 0)) {
+        return res;
+    }
+    buf += res;
+
+    record->type = __halfword(buf); buf += 2;
+    record->class = __halfword(buf); buf += 2;
+    record->ttl = buf[3] << 24 | buf[2] << 16 | buf[1] << 8 | buf[0];
+    record->rdlength = buf[1] | buf[0] << 8;
     return 0;
 }
