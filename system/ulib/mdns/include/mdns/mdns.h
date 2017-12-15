@@ -74,16 +74,18 @@ typedef struct mdns_question_t {
     char* domain;
     uint16_t qtype;
     uint16_t qclass;
+    struct mdns_question_t* next;
 } mdns_question;
 
 // An mDNS resource record
 typedef struct mdns_rr_t {
-    char name[MAX_DOMAIN_LENGTH];
+    char* name;
     uint16_t type;
     uint16_t class;
-    uint16_t ttl;
+    uint32_t ttl;
     uint16_t rdlength;
-    uint16_t rdata;
+    uint8_t* rdata;
+    struct mdns_rr_t* next;
 } mdns_rr;
 
 // An mDNS query packet
@@ -91,10 +93,8 @@ typedef struct mdns_rr_t {
 // FIXME: Handle more than 10 things or use linked list.
 typedef struct mdns_query_t {
     mdns_header header;
-    mdns_question questions[10];
-    mdns_rr answers[10];
-    mdns_rr authorities[10];
-    mdns_rr rrs[10];
+    mdns_question* questions;
+    mdns_rr* answers;
 } mdns_query;
 
 
@@ -132,3 +132,10 @@ int mdns_parse_domain(char* buf, char** dest);
 
 // Parses a resource record.
 int mdns_parse_rr(char *buf, mdns_rr *rr);
+
+// Packs the given sections of a query message into a uint8_t buffer.
+void pack_query(uint8_t* buf, mdns_header* header, mdns_question* question, 
+    mdns_rr* answer);
+
+// Prints the query to stdout. For debugging only.
+void dump_query(mdns_query* query);

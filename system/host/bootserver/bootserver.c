@@ -557,106 +557,145 @@ int main(int argc, char** argv) {
 }
 
 
-void __dump_rr(mdns_rr* rrs, int len, char* indent) {
-    mdns_rr* rr = rrs;
-    int count = 0;
-    for (; rr != NULL && count < len; count++, rr++) {
-        printf("%sType:  %04X\n", indent, rr->type);
-        printf("%sClass: %04X\n", indent, rr->class);
-        printf("%sTTL:   %d\n",   indent, rr->ttl);
-    }
-}
+// sendto(sendingsocket, msg, (char*)end - (char*)msg, 0, (struct sockaddr *)&to, GET_SA_LEN(to));
 
 int boot_with_mdns() {
-    const char* address = MDNS_IPV6;
-    int port = MDNS_PORT;
+    // DELETE.
+    char domain[18] = "_bootserver.local";
 
-    int sockfd = mdns_socket(AF_INET6, address, port);
-    if (sockfd < 0) {
-        perror("mdns_socket");
-        exit(1);
-    }
+    mdns_header header;
+    memset(&header, 0, sizeof(header));
+    header.id = (uint16_t)1;
+    header.flags = (uint16_t)2;
+    header.answer_count = (uint16_t)1;
+    header.authority_count = (uint16_t)-1;
+    header.question_count  = (uint16_t)1;
 
-    printf("Listening at %s:%d (fd=%d)\n", address, port, sockfd);
+    mdns_question question;
+    memset(&question, 0, sizeof(question));
+    question.domain = malloc(strlen(domain));
+    memset(question.domain, 0, strlen(domain));
+    memcpy(question.domain, domain, strlen(domain));
+    question.qtype = (uint16_t)9;
+    question.qclass = (uint16_t)5;
+    
+    mdns_rr answer;
+    memset(&answer, 0, sizeof(answer));
+    answer.name = malloc(strlen(domain));
+    memset(answer.name, 0, strlen(domain));
+    memcpy(answer.name, domain, strlen(domain));
+    answer.type =  (uint16_t)0xf001; // A
+    // Investigate bug where class doesn't decode properly when set to 0xd0d0.
+    answer.class = (uint16_t)0xF313; // Any
+    answer.ttl =   (uint32_t)0x12345678;
+    answer.next = NULL;
 
-    struct sockaddr_storage fromaddr;
-    socklen_t fromaddr_len;
-    char buf[512];
-    int byte_count;
+    printf("%lu\n", sizeof(header));
+    printf("%lu\n", sizeof(question));
+    printf("%lu\n", sizeof(answer));
 
-    mdns_query msg;
-    uint8_t dest[MAX_DOMAIN_LENGTH];
-    char domain[18] = "_bootserver.local"; 
-    domain_to_labels(domain, dest);
+    uint8_t buffer[256];
+    memset(&buffer, 0, 256);
+    pack_query(buffer, &header, &question, &answer);
+    
+    // Test.
+    mdns_query query;
+    memset(&query, 0, sizeof(query));
+    mdns_parse_query((char*)buffer, 256, &query);
+    dump_query(&query);
+    return -1;
+    // END DELETE.
 
-    while (true) {
-        fromaddr_len = sizeof fromaddr;
-        byte_count = recvfrom(sockfd, buf, sizeof buf, 0,
-                              (struct sockaddr*)&fromaddr, &fromaddr_len);
-        if (byte_count < 1) {
-            continue;
-        }
-        buf[byte_count] = '\0';
+    // const char* address = MDNS_IPV6;
+    // int port = MDNS_PORT;
 
-        mdns_query query;
-        memset(&query, 0, sizeof query);
-        int res = mdns_parse_query(buf, byte_count, &query);
-        if (res < 0) {
-            printf("mdns_parse_query error");
-            exit(1);
-        }
+    // int sockfd = mdns_socket(AF_INET6, address, port);
+    // if (sockfd < 0) {
+    //     perror("mdns_socket");
+    //     exit(1);
+    // }
 
-        // Read the sender's address info.
-        char ip[256];
-        if (fromaddr.ss_family == AF_INET6) {
-            struct sockaddr_in6* sin = (struct sockaddr_in6*)&fromaddr;
-            inet_ntop(AF_INET6, &(sin->sin6_addr), ip, INET6_ADDRSTRLEN);
-        } else {
-            struct sockaddr_in* sin = (struct sockaddr_in*)&fromaddr;
-            inet_ntop(AF_INET, &(sin->sin_addr), ip, INET_ADDRSTRLEN);
-        }
+    // printf("Listening at %s:%d (fd=%d)\n", address, port, sockfd);
 
-        printf("Got %d bytes from (%s)\n", (int)byte_count, ip);
-            //    query.domain);
+    // struct sockaddr_storage fromaddr;
+    // socklen_t fromaddr_len;
+    // char buf[512];
+    // int byte_count;
 
-        // Dump the DNS header
-        mdns_header header = query.header;
-        printf("> Header:\n");
-        printf("  id:              %d\n", header.id);
-        printf("  flags:           %d\n", header.flags);
-        printf("  question count:  %d\n", header.question_count);
-        printf("  answer count:    %d\n", header.answer_count);
-        printf("  authority count: %d\n", header.authority_count);
-        printf("  resource record count: %d\n", header.rr_count);
+    // while (true) {
+    //     fromaddr_len = sizeof fromaddr;
+    //     byte_count = recvfrom(sockfd, buf, sizeof buf, 0,
+    //                           (struct sockaddr*)&fromaddr, &fromaddr_len);
+    //     if (byte_count < 1) {
+    //         continue;
+    //     }
+    //     buf[byte_count] = '\0';
 
-        if (header.question_count > 0) {
-            printf("  > Questions:\n");
-            int qcount = 0;
-            for (; qcount < header.question_count; qcount++) {   
-                mdns_question question = query.questions[qcount];
-                printf("    Domain: %s\n", question.domain);
-                printf("    Type:   0x%02X\n", question.qtype);
-                printf("    Class:  0x%02X\n", question.qclass);
-            }
-        }
+    //     mdns_query query;
+    //     memset(&query, 0, sizeof query);
+    //     int res = mdns_parse_query(buf, byte_count, &query);
+    //     if (res < 0) {
+    //         printf("mdns_parse_query error");
+    //         exit(1);
+    //     }
 
-        if (header.answer_count > 0) {
-            printf("  > Answers:\n");
-            __dump_rr(query.answers, header.question_count, "    ");
-        }
-        if (header.authority_count > 0) {
-            printf("  > Authorities:\n");
-            __dump_rr(query.authorities, header.authority_count, "    ");
-        }
-        if (header.rr_count > 0) {
-            printf("  > Extra rrs:\n");
-            __dump_rr(query.rrs, header.rr_count, "    ");
-        }
+    //     // Read the sender's address info.
+    //     char ip[256];
+    //     if (fromaddr.ss_family == AF_INET6) {
+    //         struct sockaddr_in6* sin = (struct sockaddr_in6*)&fromaddr;
+    //         inet_ntop(AF_INET6, &(sin->sin6_addr), ip, INET6_ADDRSTRLEN);
+    //     } else {
+    //         struct sockaddr_in* sin = (struct sockaddr_in*)&fromaddr;
+    //         inet_ntop(AF_INET, &(sin->sin_addr), ip, INET_ADDRSTRLEN);
+    //     }
 
+    //     printf("Got %d bytes from (%s)\n", (int)byte_count, ip);
+    //         //    query.domain);
+
+    //     // Dump the DNS header
+    //     mdns_header header = query.header;
+    //     printf("> Header:\n");
+    //     printf("  id:              %d\n", header.id);
+    //     printf("  flags:           %d\n", header.flags);
+    //     printf("  question count:  %d\n", header.question_count);
+    //     printf("  answer count:    %d\n", header.answer_count);
+    //     printf("  authority count: %d\n", header.authority_count);
+    //     printf("  resource record count: %d\n", header.rr_count);
+
+    //     if (header.question_count > 0) {
+    //         printf("  > Questions:\n");
+    //         int qcount = 0;
+    //         for (; qcount < header.question_count; qcount++) {   
+    //             mdns_question question = query.questions[qcount];
+    //             printf("    Domain: %s\n", question.domain);
+    //             printf("    Type:   0x%02X\n", question.qtype);
+    //             printf("    Class:  0x%02X\n", question.qclass);
+    //         }
+    //     }
+
+    //     if (header.answer_count > 0) {
+    //         printf("  > Answers:\n");
+    //         __dump_rr(query.answers, header.question_count, "    ");
+    //     }
+    //     if (header.authority_count > 0) {
+    //         printf("  > Authorities:\n");
+    //         __dump_rr(query.authorities, header.authority_count, "    ");
+    //     }
+    //     if (header.rr_count > 0) {
+    //         printf("  > Extra rrs:\n");
+    //         __dump_rr(query.rrs, header.rr_count, "    ");
+    //     }
+
+    //     // Announce the bootserver to the querier.
+    //     // const void* msg;
+    //     // const uint8_t end;
+
+    //     // int err = sendto(MDNS_ANNOUNCE_PORT, msg, (char*)end - (char*)msg, 0, 
+    //     //     (struct sockaddr *)&fromaddr, &fromaddr_len);
         
-        memset(buf, 0, sizeof(buf));
-    }
+    //     memset(buf, 0, sizeof(buf));
+    // }
 
-    close(sockfd);
+    // close(sockfd);
     return 0;
 }
